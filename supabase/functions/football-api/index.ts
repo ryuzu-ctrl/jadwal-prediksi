@@ -84,6 +84,18 @@ Deno.serve(async (req: Request) => {
         });
       }
       data = await fetchApi('/predictions', { fixture });
+    } else if (action === 'odds') {
+      const fixture = q.get('fixture');
+      if (!fixture) {
+        return new Response(JSON.stringify({ error: 'Missing fixture id' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      data = await fetchApi('/odds', {
+        fixture,
+        ...(q.get('bookmaker') ? { bookmaker: q.get('bookmaker')! } : {}),
+      });
     } else {
       return new Response(JSON.stringify({ error: 'Unknown action' }), {
         status: 404,

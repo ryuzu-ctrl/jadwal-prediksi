@@ -130,9 +130,9 @@
               type="text"
               id="searchMatchInput"
               class="search-match__input"
-              placeholder="Cari nama tim..."
+              placeholder="Cari nama tim atau liga..."
               autocomplete="off"
-              aria-label="Cari nama tim"
+              aria-label="Cari nama tim atau liga"
             />
             <button id="searchMatchClear" class="search-match__clear" aria-label="Hapus pencarian" type="button">
               <i class="fas fa-times"></i>
@@ -160,16 +160,16 @@
 
         <div id="schedulePanel" class="panel show" role="tabpanel">
           <div id="scheduleList">
-            <div class="loading-state"><div class="loader"></div><b>Memuat jadwal…</b><span>Data langsung dari API-Football</span></div>
+            <div class="loading-state"><div class="loader"></div><b>Mohon di tunggu bossku</b><span>Data langsung dari API-Football</span></div>
           </div>
           <button class="all-btn" id="modalBtn">
-            <i class="fas fa-crown"></i> Semua Layanan
+            <i class="fas fa-crown"></i> Selengkapnya
           </button>
         </div>
 
         <div id="predictionPanel" class="panel" role="tabpanel" aria-hidden="true">
           <div id="predictionList">
-            <div class="loading-state"><div class="loader"></div><b>Memuat prediksi…</b><span>Prediksi tersedia sesuai coverage API</span></div>
+            <div class="loading-state"><div class="loader"></div><b>Mohon di tunggu bossku</b><span>Prediksi tersedia sesuai coverage API</span></div>
           </div>
         </div>
       </section>
@@ -204,7 +204,7 @@
         <h2 class="upcoming__title">PERTANDINGAN TERDEKAT</h2>
         <p class="upcoming__subtitle">Jadwal pertandingan berikutnya dalam waktu terdekat.</p>
         <div id="upcomingList" class="upcoming__list">
-          <div class="loading-state"><div class="loader"></div><b>Memuat pertandingan…</b></div>
+          <div class="loading-state"><div class="loader"></div><b>Mohon di tunggu bossku</b></div>
         </div>
       </section>
 
@@ -229,39 +229,7 @@
       </div>
     </div>
 
-    <!-- Chatbase chat widget -->
-    <!-- GANTI: chatbotId di bawah dengan Agent ID dari dashboard Chatbase
-         (Agent > Settings > General > Agent details) — nilai yang sama
-         dipakai untuk {agentId} di netlify.toml. `domain` diarahkan ke
-         domain Anda sendiri supaya request API/asset widget diproksikan
-         lewat rewrites di netlify.toml (bukan langsung ke chatbase.co).
-         `src` TETAP ke chatbase.co — itu bootstrap loader, bukan yang
-         diproksikan. Cek tab Network setelah live untuk pastikan request
-         API benar-benar lewat domain sendiri. -->
-    <script>
-      window.embeddedChatbotConfig = {
-        chatbotId: 'YOUR_CHATBOT_ID',
-        domain: 'GANTI-DENGAN-DOMAIN-ANDA.com',
-      };
-    </script>
-    <script
-      src="https://www.chatbase.co/embed.min.js"
-      chatbotId="YOUR_CHATBOT_ID"
-      domain="GANTI-DENGAN-DOMAIN-ANDA.com"
-      defer
-    ></script>
-
     <script src="popularity.config.js" defer></script>
     <script src="script.js" defer></script>
   </body>
-  <script>
-window.JPB_PROTECTION = {
-  context: true,
-  copy: true,
-  select: true,
-  devtools: true,
-  redirect: '/blocked.html'
-};
-</script>
-
 </html>

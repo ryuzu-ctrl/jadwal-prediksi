@@ -79,7 +79,6 @@ window.POPULARITY_CONFIG = {
   topTeamThreshold: 80,
   derbyBonus: 260,
   timeBonuses: {
-    live: 1000,
     within24Hours: 700,
     within72Hours: 250,
   },

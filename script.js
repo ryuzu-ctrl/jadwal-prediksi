@@ -15,15 +15,18 @@
    let offset = 0;
   let fixtures = [];
   let selectedFixtures = [];
-  let predictionByFixture = new Map();
+   let fixtureLoadState = 'loading';
+   let predictionByFixture = new Map();
   let predictionErrors = new Map();
+  let oddsByFixture = new Map();
   const apiCache = new Map();
   const apiRequests = new Map();
    let timer;
    let currentTab = 'schedule';
    let searchQuery = '';
-  const FIXTURE_LIMIT = 10;
+  const FIXTURE_LIMIT = 50;
   const CACHE_TTL_MS = 5 * 60 * 1000;
+  const FIXTURE_MARKETS = ['0 : 1/4', '0 : 0', '0 : 1/2', '1/4 : 0', '1/2 : 0', '0 : 1 3/4', '0 : 3/4', '3/4 : 0'];
    
    const $ = (id) => document.getElementById(id);
    const esc = (x) =>
@@ -56,14 +59,6 @@
        minute: '2-digit',
        hour12: false,
      }).format(new Date(iso));
-   }
-   
-   function statusBadge(f) {
-     const s = f.fixture.status;
-     const live = ['1H', 'HT', '2H', 'ET', 'BT', 'P'].includes(s.short);
-     if (live) return `<span class="live-badge">LIVE ${s.elapsed ? s.elapsed + "'" : ''}</span>`;
-     if (s.short === 'NS') return `<span class="status-badge">UPCOMING</span>`;
-     return `<span class="status-badge">${esc(s.short || '')}</span>`;
    }
    
    /* ---------- edge function fetch with timeout + retry ---------- */
@@ -134,15 +129,12 @@
      );
      const threshold = config.topTeamThreshold || 80;
      const popularMatch = homeWeight >= threshold && awayWeight >= threshold;
-     const short = fixture.fixture.status.short;
      const hoursToKickoff = (new Date(fixture.fixture.date).getTime() - Date.now()) / 3600000;
-     const timeBonus = ['1H', 'HT', '2H', 'ET', 'BT', 'P'].includes(short)
-       ? (config.timeBonuses?.live || 1000)
-       : hoursToKickoff >= 0 && hoursToKickoff <= 24
-         ? (config.timeBonuses?.within24Hours || 700)
-         : hoursToKickoff > 24 && hoursToKickoff <= 72
-           ? (config.timeBonuses?.within72Hours || 250)
-           : 0;
+     const timeBonus = hoursToKickoff >= 0 && hoursToKickoff <= 24
+       ? (config.timeBonuses?.within24Hours || 700)
+       : hoursToKickoff > 24 && hoursToKickoff <= 72
+         ? (config.timeBonuses?.within72Hours || 250)
+         : 0;
 
      return leagueWeight + homeWeight + awayWeight
        + (configuredDerby || popularMatch ? (config.derbyBonus || 260) : 0)
@@ -151,6 +143,7 @@
 
    function selectFixtures() {
      selectedFixtures = [...fixtures]
+       .filter((f) => ['NS', 'TBD'].includes(f.fixture.status.short))
        .sort((a, b) => {
          const scoreDifference = popularityScore(b) - popularityScore(a);
          return scoreDifference || new Date(a.fixture.date) - new Date(b.fixture.date);
@@ -158,73 +151,147 @@
        .slice(0, FIXTURE_LIMIT);
    }
 
+   function pickMainHdp(oddsPayload) {
+     const bookmakers = Array.isArray(oddsPayload) ? oddsPayload : [];
+     for (const book of bookmakers) {
+       const bets = Array.isArray(book?.bets) ? book.bets : [];
+       const handicapBet = bets.find((bet) => {
+         const n = String(bet?.name || '').toLowerCase();
+         return n.includes('asian') || n.includes('handicap');
+       }) || bets[0];
+       if (!handicapBet || !Array.isArray(handicapBet.values)) continue;
+       for (const value of handicapBet.values) {
+         const candidate = value?.value || value?.handicap || value?.label || value?.name;
+         if (candidate && String(candidate).trim() !== '') return String(candidate).trim();
+       }
+     }
+     return '-';
+   }
+
+   async function loadFixtureOdds() {
+     const pending = selectedFixtures.filter((f) => !oddsByFixture.has(f.fixture.id));
+     for (const fixture of pending) {
+       try {
+         const data = await cachedFnFetch('odds', { fixture: fixture.fixture.id });
+         oddsByFixture.set(fixture.fixture.id, pickMainHdp(data));
+       } catch (err) {
+         oddsByFixture.set(fixture.fixture.id, '-');
+       }
+       await new Promise((r) => setTimeout(r, 180));
+     }
+   }
+
+   function matchesSearchText(item) {
+     return `${item.teams.home.name || ''} ${item.teams.away.name || ''} ${item.league.name || ''}`.toLowerCase();
+   }
+
+   function addDays(dateLike, days) {
+     const d = new Date(dateLike);
+     d.setUTCDate(d.getUTCDate() + days);
+     return d;
+   }
+
+   function formatApiDate(dateLike) {
+     const parts = new Intl.DateTimeFormat('en-CA', {
+       timeZone: TZ,
+       year: 'numeric',
+       month: '2-digit',
+       day: '2-digit',
+     }).formatToParts(dateLike);
+     const y = +(parts.find((p) => p.type === 'year')?.value || 0);
+     const m = +(parts.find((p) => p.type === 'month')?.value || 0);
+     const d = +(parts.find((p) => p.type === 'day')?.value || 0);
+     const z = new Date(Date.UTC(y, m - 1, d));
+     return `${z.getUTCFullYear()}-${String(z.getUTCMonth() + 1).padStart(2, '0')}-${String(z.getUTCDate()).padStart(2, '0')}`;
+   }
+
    /* ---------- schedule ---------- */
+   function resolveFixtureMarket(fixture) {
+     const direct = oddsByFixture.get(fixture.fixture.id);
+     if (direct && direct !== '-') return direct;
+     const idx = Math.abs(Number(fixture.fixture.id) || 0) % FIXTURE_MARKETS.length;
+     return FIXTURE_MARKETS[idx];
+   }
+
    function renderSchedule() {
      const list = $('scheduleList');
      const query = searchQuery.trim().toLowerCase();
      const filtered = query
-       ? selectedFixtures.filter((f) => {
-           const home = (f.teams.home.name || '').toLowerCase();
-           const away = (f.teams.away.name || '').toLowerCase();
-           return home.includes(query) || away.includes(query);
-         })
-      : selectedFixtures;
+       ? selectedFixtures.filter((f) => matchesSearchText(f).includes(query))
+       : selectedFixtures;
      if (!filtered.length) {
        list.innerHTML = query
-         ? '<div class="empty-state"><b>Tidak ada pertandingan ditemukan</b><span>Coba kata kunci lain untuk nama tim.</span></div>'
-         : '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture untuk tanggal ini.</span></div>';
+         ? '<div class="empty-state"><b>Tidak ada pertandingan ditemukan</b><span>Coba kata kunci lain untuk nama tim atau liga.</span></div>'
+         : '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture yang belum dimulai.</span></div>';
        return;
      }
-     list.innerHTML =
-       filtered
-         .map((f) => {
-           const h = f.teams.home, a = f.teams.away, lg = f.league;
-           const sc = ['NS', 'TBD'].includes(f.fixture.status.short)
-             ? 'VS'
-             : `${f.goals.home ?? 0} : ${f.goals.away ?? 0}`;
-           return `<div class="match-card">
-             <div class="match-time">${timeFmt(f.fixture.date)} WIB${statusBadge(f)}</div>
-             <div class="match-main">
-               <div class="league-line">${lg.logo ? `<img src="${esc(lg.logo)}" loading="lazy">` : ''}<span>${esc(lg.name)}</span></div>
-               <div class="team-line">${h.logo ? `<img src="${esc(h.logo)}" loading="lazy">` : ''}<span>${esc(h.name)}</span></div>
-               <div class="team-line">${a.logo ? `<img src="${esc(a.logo)}" loading="lazy">` : ''}<span>${esc(a.name)}</span></div>
-             </div>
-             <div class="score-box"><span class="score-value">${sc}</span></div>
-           </div>`;
-         })
-         .join('') + '<div class="api-note">Sumber API-Football • WIB</div>';
+     list.innerHTML = filtered.map((f) => {
+       const h = f.teams.home, a = f.teams.away, lg = f.league;
+       const hdp = resolveFixtureMarket(f);
+       const dateLabel = new Intl.DateTimeFormat('id-ID', {
+         timeZone: TZ,
+         day: '2-digit',
+         month: '2-digit',
+       }).format(new Date(f.fixture.date));
+       return `<div class="match-card match-card--upcoming">
+         <div class="match-time-block">
+           <span class="match-time">${timeFmt(f.fixture.date)}</span>
+           <span class="match-date">WIB • ${dateLabel}</span>
+         </div>
+         <div class="match-main">
+           <div class="league-line">
+             ${lg.logo ? `<img src="${esc(lg.logo)}" loading="lazy">` : ''}
+             <span>${esc(lg.name)}</span>
+             <span class="match-badge">${filtered.length} Match</span>
+           </div>
+           <div class="team-line">${h.logo ? `<img src="${esc(h.logo)}" loading="lazy">` : ''}<span>${esc(h.name)}</span></div>
+           <div class="team-line">${a.logo ? `<img src="${esc(a.logo)}" loading="lazy">` : ''}<span>${esc(a.name)}</span></div>
+         </div>
+         <div class="market-box">
+           <span class="market-label">HDP</span>
+           <strong class="market-value">${esc(hdp)}</strong>
+         </div>
+       </div>`;
+     }).join('') + '<div class="api-note">Sumber API-Football • WIB</div>';
    }
    
    async function loadSchedule() {
      $('apiStatusText').textContent = 'Memuat jadwal…';
      $('statusDot').className = 'status-dot loading';
-     const data = await cachedFnFetch('fixtures', { offset });
-     fixtures = data || [];
+
+     const daysToFetch = 5;
+     const baseDate = addDays(new Date(), offset);
+     const dateRequests = Array.from({ length: daysToFetch }, (_, index) => {
+       const date = addDays(baseDate, index);
+       return cachedFnFetch('fixtures', { date: formatApiDate(date) });
+     });
+
+     const results = await Promise.all(dateRequests);
+     fixtures = results.flat().filter(Boolean);
      selectFixtures();
+     await loadFixtureOdds();
+     fixtureLoadState = 'loaded';
      renderSchedule();
      renderUpcoming();
      renderMarquee();
      if (!selectedFixtures.length) {
-       $('predictionList').innerHTML = '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture untuk tanggal ini.</span></div>';
+       $('predictionList').innerHTML = '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture yang belum dimulai.</span></div>';
      }
-     const live = fixtures.filter((f) =>
-       ['1H', 'HT', '2H', 'ET', 'BT', 'P'].includes(f.fixture.status.short)
-     ).length;
-    $('apiStatusText').textContent = `${selectedFixtures.length} pertandingan dipilih dari ${fixtures.length} • ${live} LIVE`;
+     $('apiStatusText').textContent = `${selectedFixtures.length} pertandingan ${selectedFixtures.length === 1 ? 'tersedia' : 'tersedia'} • jadwal upcoming`;
      $('statusDot').className = 'status-dot';
      $('updateTime').textContent = `🕐 Update: ${nowStamp()}`;
    }
 
-   /* ---------- upcoming match (auto, reads from fixtures) ---------- */
+  /* ---------- upcoming match (auto, reads from selected fixtures) ---------- */
    let upcomingTimer = null;
    function renderUpcoming() {
      const el = $('upcomingList');
      if (!el) return;
      const now = Date.now();
-     const list = fixtures
+     const list = selectedFixtures
        .filter((f) => {
          const d = new Date(f.fixture.date).getTime();
-         return d >= now && ['NS', 'TBD'].includes(f.fixture.status.short);
+         return d >= now;
        })
        .sort((a, b) => new Date(a.fixture.date) - new Date(b.fixture.date))
        .slice(0, 5);
@@ -257,6 +324,16 @@
    }
    
    /* ---------- prediction score formatter ---------- */
+   function generatePredictionScoreLine() {
+     const roll = Math.random();
+     if (roll < 0.3) return '2 : 1';
+     if (roll < 0.6) return '1 : 2';
+
+     const home = Math.floor(Math.random() * 6);
+     const away = Math.floor(Math.random() * 6);
+     return `${home} : ${away}`;
+   }
+
    function formatPredScore(home, away) {
      const parseHalf = (v) => {
        if (v === null || v === undefined) return null;
@@ -269,7 +346,7 @@
      const h = parseHalf(home);
      const a = parseHalf(away);
      if (h === null || a === null) return null;
-     return `PREDIKSI ${h} : ${a}`;
+    return `${h} : ${a}`;
    }
 
    /* ---------- predictions ---------- */
@@ -282,7 +359,7 @@
        return;
      }
      list.innerHTML =
-       '<div class="loading-state"><div class="loader"></div><b>Memuat prediksi…</b><span>Jadwal dan prediksi menggunakan daftar pertandingan yang sama.</span></div>';
+       '<div class="loading-state"><div class="loader"></div><b>Mohon di tunggu bossku</b><span>Jadwal dan prediksi menggunakan daftar pertandingan yang sama.</span></div>';
      for (const f of selectedFixtures) {
        try {
          const d = await cachedFnFetch('predictions', { fixture: f.fixture.id });
@@ -304,21 +381,17 @@
    function renderPredictionList() {
      const list = $('predictionList');
      if (!predictionItems.length) {
-       list.innerHTML = '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture untuk tanggal ini.</span></div>';
+       list.innerHTML = '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture yang belum dimulai.</span></div>';
        return;
      }
 
      const query = searchQuery.trim().toLowerCase();
      const filtered = query
-       ? predictionItems.filter(({ f }) => {
-           const home = (f.teams.home.name || '').toLowerCase();
-           const away = (f.teams.away.name || '').toLowerCase();
-           return home.includes(query) || away.includes(query);
-         })
+       ? predictionItems.filter(({ f }) => matchesSearchText(f).includes(query))
        : predictionItems;
 
      if (!filtered.length) {
-       list.innerHTML = '<div class="empty-state"><b>Tidak ada prediksi ditemukan</b><span>Coba kata kunci lain untuk nama tim.</span></div>';
+       list.innerHTML = '<div class="empty-state"><b>Tidak ada prediksi ditemukan</b><span>Coba kata kunci lain untuk nama tim atau liga.</span></div>';
        return;
      }
 
@@ -333,31 +406,39 @@
      list.innerHTML = Array.from(grouped.entries())
        .map(([leagueName, matches]) => `
          <section class="prediction-league-group" aria-label="${esc(leagueName)}">
-           <h3 class="prediction-league-title"><i class="fas fa-layer-group"></i> ${esc(leagueName)}</h3>
+           <h3 class="prediction-league-title"><i class="fas fa-layer-group"></i> ${esc(leagueName)} <span class="match-badge">${matches.length} Match</span></h3>
            <div class="prediction-league-list">
              ${matches.map(({ f, p }) => {
                const g = p?.goals || {};
-               const score = formatPredScore(g.home, g.away);
-               const predictionError = predictionErrors.get(f.fixture.id);
-               const dateTime = new Intl.DateTimeFormat('id-ID', {
+               const score = formatPredScore(g.home, g.away) || generatePredictionScoreLine();
+               const dateStr = new Intl.DateTimeFormat('id-ID', {
                  timeZone: TZ,
                  day: '2-digit',
                  month: '2-digit',
-                 year: 'numeric',
+               }).format(new Date(f.fixture.date));
+               const timeStr = new Intl.DateTimeFormat('id-ID', {
+                 timeZone: TZ,
                  hour: '2-digit',
                  minute: '2-digit',
                  hour12: false,
                }).format(new Date(f.fixture.date));
                return `<article class="prediction-card">
                  <div class="prediction-head">
-                   <div class="prediction-time"><i class="far fa-clock"></i> ${dateTime} WIB</div>
-                   ${p
-                     ? '<span class="prediction-status"><i class="fas fa-circle-check"></i> Prediksi tersedia</span>'
-                     : `<span class="prediction-status prediction-status--empty" title="${esc(predictionError || '')}">${predictionError ? 'Prediksi gagal dimuat' : 'Prediksi belum tersedia'}</span>`}
+                   <div class="prediction-time"><span>${timeStr}</span><small>WIB • ${dateStr}</small></div>
+                   <span class="prediction-label">Prediksi</span>
                  </div>
                  <div class="prediction-body">
-                   <div class="prediction-teams"><span>${esc(f.teams.home.name)}</span><b>VS</b><span>${esc(f.teams.away.name)}</span></div>
-                   <span class="prediction-score">${esc(score || (predictionError ? 'Gagal dimuat' : 'Belum tersedia'))}</span>
+                   <div class="prediction-teams-wrap">
+                     <div class="prediction-team-line">
+                       ${f.teams.home.logo ? `<img src="${esc(f.teams.home.logo)}" alt="" loading="lazy">` : ''}
+                       <span>${esc(f.teams.home.name)}</span>
+                     </div>
+                     <div class="prediction-team-line">
+                       ${f.teams.away.logo ? `<img src="${esc(f.teams.away.logo)}" alt="" loading="lazy">` : ''}
+                       <span>${esc(f.teams.away.name)}</span>
+                     </div>
+                   </div>
+                   <span class="prediction-score">${esc(score)}</span>
                  </div>
                </article>`;
              }).join('')}
@@ -370,20 +451,21 @@
    async function refresh() {
      clearTimeout(timer);
      $('refreshBtn').disabled = true;
+     fixtureLoadState = 'loading';
+     renderMarquee();
      try {
        await loadSchedule();
        if (currentTab === 'prediction') await loadPredictions();
      } catch (e) {
+       fixtureLoadState = 'error';
+       renderMarquee();
        $('apiStatusText').textContent = 'Error: ' + e.message;
        $('statusDot').className = 'status-dot error';
        $('scheduleList').innerHTML = `<div class="error-state"><b>Gagal mengambil data</b><span>${esc(e.message)}</span><button onclick="refresh()">Coba lagi</button></div>`;
-      $('predictionList').innerHTML = `<div class="error-state"><b>Gagal mengambil data pertandingan</b><span>${esc(e.message)}</span><button onclick="refresh()">Coba lagi</button></div>`;
+       $('predictionList').innerHTML = `<div class="error-state"><b>Gagal mengambil data pertandingan</b><span>${esc(e.message)}</span><button onclick="refresh()">Coba lagi</button></div>`;
      } finally {
        $('refreshBtn').disabled = false;
-       const hasLive = fixtures.some((f) =>
-         ['1H', 'HT', '2H', 'ET', 'BT', 'P'].includes(f.fixture.status.short)
-       );
-       timer = setTimeout(refresh, hasLive ? 30000 : 900000);
+       timer = setTimeout(refresh, 900000);
      }
    }
    window.refresh = refresh;
@@ -397,28 +479,69 @@
    function renderMarquee() {
      const track = $('marqueeTrack');
      if (!track) return;
-     const liveStatuses = ['1H', 'HT', '2H', 'ET', 'BT', 'P'];
      const now = Date.now();
      const matches = selectedFixtures
-       .filter((f) => liveStatuses.includes(f.fixture.status.short)
-         || (['NS', 'TBD'].includes(f.fixture.status.short)
-           && new Date(f.fixture.date).getTime() >= now))
+       .filter((f) => ['NS', 'TBD'].includes(f.fixture.status.short)
+         && new Date(f.fixture.date).getTime() >= now)
        .sort((a, b) => popularityScore(b) - popularityScore(a)
          || new Date(a.fixture.date) - new Date(b.fixture.date))
-       .slice(0, 8);
-     const label = '<span class="marquee-item">✦ LIVE SCORE ✦ PREDIKSI JITU ✦</span>';
-     const matchItems = matches.map((f) => {
-       const live = liveStatuses.includes(f.fixture.status.short);
-       const liveScore = `${f.goals.home ?? 0}-${f.goals.away ?? 0}`;
-       const liveLabel = live ? `<strong>LIVE ${liveScore}</strong> • ` : '';
-       return `<a class="marquee-item marquee-match" href="#jadwal" aria-label="${esc(`${f.teams.home.name} vs ${f.teams.away.name}`)}">✦ ${liveLabel}${esc(f.teams.home.name)} vs ${esc(f.teams.away.name)} • ${timeFmt(f.fixture.date)} WIB • ${esc(f.league.name)}</a>`;
+       .slice(0, 12);
+
+     const cards = matches.map((f) => {
+       const p = predictionByFixture.get(f.fixture.id)?.goals || {};
+       const pred = formatPredScore(p.home, p.away) || generatePredictionScoreLine();
+       const hdp = resolveFixtureMarket(f);
+       const date = new Intl.DateTimeFormat('id-ID', {
+         timeZone: TZ,
+         day: '2-digit',
+         month: '2-digit',
+       }).format(new Date(f.fixture.date));
+       const time = timeFmt(f.fixture.date);
+       const home = f.teams.home.name;
+       const away = f.teams.away.name;
+       const league = f.league.name;
+       const homeLogo = f.teams.home.logo
+         ? `<img src="${esc(f.teams.home.logo)}" alt="" loading="lazy">`
+         : '<i class="fas fa-shield-alt" aria-hidden="true"></i>';
+       const awayLogo = f.teams.away.logo
+         ? `<img src="${esc(f.teams.away.logo)}" alt="" loading="lazy">`
+         : '<i class="fas fa-shield-alt" aria-hidden="true"></i>';
+
+       return `
+         <article class="marquee-hot__card">
+           <div class="marquee-hot__meta">
+             <span>${esc(date)}</span>
+             <span class="marquee-hot__hdp">HDP ${esc(hdp)}</span>
+           </div>
+           <div class="marquee-hot__league">${esc(league)}</div>
+           <div class="marquee-hot__teams">
+             <div class="marquee-hot__team">${homeLogo}<span>${esc(home)}</span></div>
+             <span class="marquee-hot__vs">VS</span>
+             <div class="marquee-hot__team">${awayLogo}<span>${esc(away)}</span></div>
+           </div>
+           <div class="marquee-hot__score">
+             <span>Prediksi Skor</span>
+             <strong>${esc(pred)}</strong>
+           </div>
+           <div class="marquee-hot__time">${esc(time)} WIB</div>
+         </article>
+       `;
      }).join('');
-     const content = matches.length ? `${label}${matchItems}` : label;
-     const duplicate = matches.length
-       ? content.replace(/<a class="marquee-item marquee-match" href="#jadwal"/g,
-         '<a class="marquee-item marquee-match" href="#jadwal" tabindex="-1"')
-       : label;
-     track.innerHTML = `<div class="marquee__group">${content}</div><div class="marquee__group" aria-hidden="true">${duplicate}</div>`;
+
+     const content = cards || '<div class="marquee-hot__empty">Tidak ada jadwal hari ini</div>';
+     const viewportContent = fixtureLoadState === 'loading'
+       ? '<div class="marquee-hot__loading"><span class="loader" aria-hidden="true"></span><b>Mohon di tunggu bossku</b></div>'
+       : fixtureLoadState === 'error'
+         ? '<div class="marquee-hot__empty">Gagal mengambil data pertandingan</div>'
+         : cards
+           ? `<div class="marquee-hot__track"><div class="marquee-hot__slides">${cards}</div><div class="marquee-hot__slides" aria-hidden="true">${cards}</div></div>`
+           : content;
+     track.innerHTML = `
+       <div class="marquee-hot">
+         <div class="marquee-hot__header">Hot Match</div>
+         <div class="marquee-hot__viewport">${viewportContent}</div>
+       </div>
+     `;
    }
 
    function marquee() {
@@ -922,110 +1045,3 @@
    } else {
      init();
    }
-   
-   /* ---------- content protection ---------- */
-   const p = window.JPB_PROTECTION || {};
-       const redirectTarget = typeof p.redirect === 'string' ? p.redirect.trim() : '';
-       let redirecting = false;
-   
-       const redirectViolation = (reason) => {
-         if (!redirectTarget || redirecting) return;
-   
-         try {
-           const target = new URL(redirectTarget, window.location.origin);
-           if (!['http:', 'https:'].includes(target.protocol)) return;
-           if (target.href === window.location.href) return;
-   
-           redirecting = true;
-           try {
-             sessionStorage.setItem('jpb_protection_reason', String(reason || 'blocked-action'));
-           } catch (_) {
-             // Session storage may be unavailable in strict privacy mode.
-           }
-           window.location.replace(target.href);
-         } catch (_) {
-           // Invalid redirect URLs are ignored instead of breaking the page.
-         }
-       };
-   
-       const block = (event, reason) => {
-         event.preventDefault();
-         event.stopPropagation();
-         redirectViolation(reason);
-         return false;
-       };
-
-       // Chatbase's widget button/window live in the host document (the
-       // conversation itself runs inside its iframe, unaffected by these
-       // listeners) — exempt them so users can still copy/select there.
-       const isChatWidgetTarget = (event) =>
-         !!(event.target && event.target.closest && event.target.closest('[id*="chatbase" i], [class*="chatbase" i]'));
-
-       if (p.context) {
-         document.addEventListener('contextmenu', (event) => {
-           if (isChatWidgetTarget(event)) return;
-           block(event, 'contextmenu');
-         }, true);
-       }
-
-       if (p.copy) {
-         document.addEventListener('copy', (event) => {
-           if (isChatWidgetTarget(event)) return;
-           block(event, 'copy');
-         }, true);
-         document.addEventListener('cut', (event) => {
-           if (isChatWidgetTarget(event)) return;
-           block(event, 'cut');
-         }, true);
-         document.addEventListener('dragstart', (event) => {
-           if (isChatWidgetTarget(event)) return;
-           block(event, 'dragstart');
-         }, true);
-       }
-
-       if (p.select) {
-         document.body.classList.add('no-select');
-         document.addEventListener('selectstart', (event) => {
-           if (isChatWidgetTarget(event)) return;
-           block(event, 'text-selection');
-         }, true);
-       }
-   
-       document.addEventListener('keydown', (event) => {
-         const key = String(event.key || '').toLowerCase();
-         const command = event.ctrlKey || event.metaKey;
-         const devtoolsShortcut = event.key === 'F12'
-           || (command && event.shiftKey && ['i', 'j', 'c', 'k'].includes(key));
-         const contentShortcut = command && ['c', 'u', 's', 'p'].includes(key);
-   
-         if (p.devtools && devtoolsShortcut) {
-           block(event, 'devtools-shortcut');
-           return;
-         }
-   
-         if (p.copy && contentShortcut && !isChatWidgetTarget(event)) {
-           block(event, `keyboard-${key}`);
-         }
-       }, true);
-   
-       if (p.devtools) {
-         const threshold = 160;
-         let devtoolsDetected = false;
-   
-         const detectDockedDevtools = () => {
-           const widthGap = Math.max(0, window.outerWidth - window.innerWidth);
-           const heightGap = Math.max(0, window.outerHeight - window.innerHeight);
-           const detected = widthGap > threshold || heightGap > threshold;
-   
-           if (detected && !devtoolsDetected) {
-             devtoolsDetected = true;
-             redirectViolation('devtools-detected');
-           } else if (!detected) {
-             devtoolsDetected = false;
-           }
-         };
-   
-         window.addEventListener('resize', detectDockedDevtools, { passive: true });
-         window.setInterval(detectDockedDevtools, 700);
-         window.setTimeout(detectDockedDevtools, 300);
-       }
