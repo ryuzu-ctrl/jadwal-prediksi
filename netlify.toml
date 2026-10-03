@@ -1,0 +1,23 @@
+# netlify.toml
+
+[[rewrites]]
+  from = "/help/*"
+  to = "https://chatbase.co/{agentId}/help/:splat"
+  status = 200 # A 200 status indicates a rewrite, not a redirect
+
+[[rewrites]]
+  from = "/help"
+  to = "https://chatbase.co/{agentId}/help"
+  status = 200
+
+# Proxy static assets (JavaScript, CSS, images)
+[[rewrites]]
+  from = "/__cb/*"
+  to = "https://chatbase.co/__cb/:splat"
+  status = 200
+
+# Proxy chat API endpoints for your agent
+[[rewrites]]
+  from = "/api/chat/{agentId}/*"
+  to = "https://chatbase.co/api/chat/{agentId}/:splat"
+  status = 200
