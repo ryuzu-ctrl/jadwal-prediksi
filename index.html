@@ -245,6 +245,7 @@
           <button class="analysis-tab active" type="button" role="tab" data-mode="match"><i class="fas fa-chart-line"></i> Analisis Pertandingan</button>
           <button class="analysis-tab" type="button" role="tab" data-mode="ask"><i class="fas fa-book-open"></i> Tanya Peraturan</button>
         </div>
+        <div id="analysisSoon" class="analysis-soon" hidden></div>
         <div id="analysisMatchPanel">
           <div class="analysis-match" id="analysisMatch"></div>
           <div class="analysis-markets" id="analysisMarkets" role="group" aria-label="Fokus market">
@@ -259,12 +260,7 @@
         </div>
         <div id="analysisAskPanel" hidden>
           <div id="askLog" class="ask-log" aria-live="polite"></div>
-          <div class="ask-suggest" id="askSuggest">
-            <button class="analysis-chip" type="button" data-ask="Bagaimana cara bermain sports betting di sini?">Cara bermain</button>
-            <button class="analysis-chip" type="button" data-ask="Apa saja ketentuan umum taruhan?">Ketentuan umum</button>
-            <button class="analysis-chip" type="button" data-ask="Jelaskan aturan Asian Handicap.">Asian Handicap</button>
-            <button class="analysis-chip" type="button" data-ask="Bagaimana aturan Mix Parlay?">Mix Parlay</button>
-          </div>
+          <div class="ask-suggest" id="askSuggest"></div>
           <form class="ask-form" id="askForm">
             <input id="askInput" class="ask-input" type="text" maxlength="500" autocomplete="off" placeholder="Tanya cara bermain atau peraturan…" aria-label="Pertanyaan tentang peraturan" />
             <button class="ask-send" id="askSend" type="submit" aria-label="Kirim"><i class="fas fa-paper-plane"></i></button>

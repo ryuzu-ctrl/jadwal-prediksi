@@ -487,6 +487,10 @@
    let analysisMarket = 'all';
    let analysisEntry = null;
    let analysisFrame = 0;
+   let analysisMode = 'match';
+   /* What the edge function reports as usable; null until the first check returns. */
+   let aiStatus = null;
+   let aiChecking = false;
 
    function mdInline(text) {
      return esc(text)
@@ -609,9 +613,27 @@
      analysisFixtureId = f.fixture.id;
      $('analysisMatch').textContent =
        `${f.teams.home.name} vs ${f.teams.away.name} • ${f.league.name} • ${timeFmt(f.fixture.date)} WIB`;
-     setAnalysisMode('match');
+     showAnalysis('match');
+   }
+
+   /* Opens the modal, then confirms the edge function is deployed and configured.
+      A failed check is repeated on the next open, so a later deploy is picked up. */
+   async function showAnalysis(mode) {
      $('analysisModal').classList.add('show');
-     loadAnalysis();
+     setAnalysisMode(mode);
+     if (aiChecking || (aiStatus && aiStatus.analysis && aiStatus.ask)) return;
+     aiChecking = true;
+     let status = {};
+     try {
+       const r = await fetch(AI_FN, { method: 'POST', headers: FN_HEADERS, body: JSON.stringify({ mode: 'status' }) });
+       if (r.ok) status = await r.json();
+     } catch (e) { /* unreachable counts as not ready */ }
+     aiChecking = false;
+     aiStatus = status;
+     const topics = Array.isArray(status.topics) ? status.topics : [];
+     $('askSuggest').innerHTML = topics.map((t) =>
+       `<button class="analysis-chip" type="button" data-ask="Apa saja yang perlu saya ketahui tentang ${esc(t.title)}?">${esc(t.title)}</button>`).join('');
+     setAnalysisMode(analysisMode);
    }
 
    /* No match chosen yet, so list the top ones. */
@@ -632,15 +654,23 @@
 
    function setAnalysisMode(mode) {
      const ask = mode === 'ask';
+     const ready = Boolean(aiStatus && aiStatus[ask ? 'ask' : 'analysis']);
+     analysisMode = mode;
      document.querySelectorAll('.analysis-tab').forEach((t) => {
        const on = t.dataset.mode === mode;
        t.classList.toggle('active', on);
        t.setAttribute('aria-selected', String(on));
      });
-     $('analysisMatchPanel').hidden = ask;
-     $('analysisAskPanel').hidden = !ask;
-     if (ask) renderAsk();
+     $('analysisMatchPanel').hidden = ask || !ready;
+     $('analysisAskPanel').hidden = !ask || !ready;
+     $('analysisSoon').hidden = ready;
+     if (!ready) {
+       $('analysisSoon').innerHTML = aiStatus
+         ? `<i class="fas fa-hourglass-half"></i><b>UPCOMING SOON</b><span>${ask ? 'Tanya Peraturan' : 'Analisis Pertandingan'} sedang disiapkan.</span>`
+         : '<div class="loader"></div><span>Memeriksa layanan AI…</span>';
+     } else if (ask) renderAsk();
      else if (analysisFixtureId == null) showAnalysisPicker();
+     else loadAnalysis();
    }
 
    /* ---------- rules Q&A (answers come from supabase/functions/ai-analyst/rules) ---------- */
@@ -697,8 +727,7 @@
        if (f) openAnalysis(f);
      });
      $('aiFab').addEventListener('click', () => {
-       setAnalysisMode('ask');
-       $('analysisModal').classList.add('show');
+       showAnalysis('ask');
      });
      $('analysisTabs').addEventListener('click', (e) => {
        const tab = e.target.closest('[data-mode]');

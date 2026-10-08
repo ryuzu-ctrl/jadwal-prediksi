@@ -359,6 +359,16 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
+    // Lets the page decide between showing a feature and "UPCOMING SOON"
+    // without spending a model call.
+    if (body.mode === 'status') {
+      return json({
+        analysis: Boolean(apiKey && Deno.env.get('FOOTBALL_API_KEY')),
+        ask: Boolean(apiKey) && ruleTopics.length > 0,
+        topics: ruleTopics.map(({ id, title }) => ({ id, title })),
+      });
+    }
+
     if (body.mode === 'ask') {
       const question = typeof body.question === 'string' ? body.question.trim() : '';
       if (!question) return json({ error: 'Pertanyaan kosong' }, 400);
