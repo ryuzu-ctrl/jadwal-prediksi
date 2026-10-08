@@ -168,15 +168,23 @@
      return '-';
    }
 
+   /* Runs in the background after the fixtures are on screen; each HDP is
+      patched into the already-rendered cards as it arrives. */
+   let oddsRun = 0;
    async function loadFixtureOdds() {
+     const run = ++oddsRun;
      const pending = selectedFixtures.filter((f) => !oddsByFixture.has(f.fixture.id));
      for (const fixture of pending) {
+       if (run !== oddsRun) return;
        try {
          const data = await cachedFnFetch('odds', { fixture: fixture.fixture.id });
          oddsByFixture.set(fixture.fixture.id, pickMainHdp(data));
        } catch (err) {
          oddsByFixture.set(fixture.fixture.id, '-');
        }
+       document.querySelectorAll(`[data-hdp="${fixture.fixture.id}"]`).forEach((el) => {
+         el.textContent = resolveFixtureMarket(fixture);
+       });
        await new Promise((r) => setTimeout(r, 180));
      }
    }
@@ -249,7 +257,7 @@
          </div>
          <div class="market-box">
            <span class="market-label">HDP</span>
-           <strong class="market-value">${esc(hdp)}</strong>
+           <strong class="market-value" data-hdp="${f.fixture.id}">${esc(hdp)}</strong>
          </div>
        </div>`;
      }).join('') + '<div class="api-note">Sumber API-Football • WIB</div>';
@@ -266,14 +274,30 @@
        return cachedFnFetch('fixtures', { date: formatApiDate(date) });
      });
 
-     const results = await Promise.all(dateRequests);
-     fixtures = results.flat().filter(Boolean);
-     selectFixtures();
-     await loadFixtureOdds();
-     fixtureLoadState = 'loaded';
-     renderSchedule();
-     renderUpcoming();
-     renderMarquee();
+     const showFixtures = (results) => {
+       fixtures = results.flat().filter(Boolean);
+       selectFixtures();
+       if (currentTab === 'prediction' && selectedFixtures.length) showPredictions();
+     };
+     const renderFixtures = () => {
+       fixtureLoadState = 'loaded';
+       renderSchedule();
+       renderUpcoming();
+       renderMarquee();
+     };
+
+     // Show today's matches as soon as they arrive; the following days fill in after.
+     const laterRequests = Promise.allSettled(dateRequests.slice(1));
+     const today = await dateRequests[0];
+     showFixtures([today]);
+     if (selectedFixtures.length) renderFixtures();
+
+     const later = (await laterRequests)
+       .filter((r) => r.status === 'fulfilled')
+       .map((r) => r.value);
+     showFixtures([today, ...later]);
+     renderFixtures();
+     loadFixtureOdds();
      if (!selectedFixtures.length) {
        $('predictionList').innerHTML = '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture yang belum dimulai.</span></div>';
      }
@@ -351,16 +375,27 @@
 
    /* ---------- predictions ---------- */
    let predictionItems = [];
+   let predictionRun = 0;
+
+   function predictionScoreText(f) {
+     const id = f.fixture.id;
+     if (!predictionByFixture.has(id) && !predictionErrors.has(id)) return '…';
+     const g = predictionByFixture.get(id)?.goals || {};
+     return formatPredScore(g.home, g.away) || generatePredictionScoreLine();
+   }
+
+   function showPredictions() {
+     predictionItems = selectedFixtures.map((f) => ({ f }));
+     renderPredictionList();
+   }
+
+   /* Teams render immediately; each score is patched in as its prediction arrives. */
    async function loadPredictions() {
-     const list = $('predictionList');
-     if (!selectedFixtures.length) {
-       predictionItems = [];
-       list.innerHTML = '<div class="empty-state"><b>Tidak ada pertandingan</b><span>Tidak ada fixture untuk tanggal ini.</span></div>';
-       return;
-     }
-     list.innerHTML =
-       '<div class="loading-state"><div class="loader"></div><b>Mohon di tunggu bossku</b><span>Jadwal dan prediksi menggunakan daftar pertandingan yang sama.</span></div>';
-     for (const f of selectedFixtures) {
+     const run = ++predictionRun;
+     showPredictions();
+     const pending = selectedFixtures.filter((f) => !predictionByFixture.has(f.fixture.id));
+     for (const f of pending) {
+       if (run !== predictionRun) return;
        try {
          const d = await cachedFnFetch('predictions', { fixture: f.fixture.id });
          predictionByFixture.set(f.fixture.id, d?.[0]?.predictions || null);
@@ -369,13 +404,11 @@
          predictionErrors.set(f.fixture.id, e.message || 'Gagal memuat prediksi');
          console.warn(e);
        }
+       document.querySelectorAll(`[data-pred="${f.fixture.id}"]`).forEach((el) => {
+         el.textContent = predictionScoreText(f);
+       });
        await new Promise((r) => setTimeout(r, 180));
      }
-     predictionItems = selectedFixtures.map((f) => ({
-       f,
-       p: predictionByFixture.get(f.fixture.id) || null,
-     }));
-     renderPredictionList();
    }
 
    function renderPredictionList() {
@@ -408,9 +441,8 @@
          <section class="prediction-league-group" aria-label="${esc(leagueName)}">
            <h3 class="prediction-league-title"><i class="fas fa-layer-group"></i> ${esc(leagueName)} <span class="match-badge">${matches.length} Match</span></h3>
            <div class="prediction-league-list">
-             ${matches.map(({ f, p }) => {
-               const g = p?.goals || {};
-               const score = formatPredScore(g.home, g.away) || generatePredictionScoreLine();
+             ${matches.map(({ f }) => {
+               const score = predictionScoreText(f);
                const dateStr = new Intl.DateTimeFormat('id-ID', {
                  timeZone: TZ,
                  day: '2-digit',
@@ -438,7 +470,7 @@
                        <span>${esc(f.teams.away.name)}</span>
                      </div>
                    </div>
-                   <span class="prediction-score">${esc(score)}</span>
+                   <span class="prediction-score" data-pred="${f.fixture.id}">${esc(score)}</span>
                  </div>
                </article>`;
              }).join('')}
@@ -455,7 +487,7 @@
      renderMarquee();
      try {
        await loadSchedule();
-       if (currentTab === 'prediction') await loadPredictions();
+       if (currentTab === 'prediction') loadPredictions();
      } catch (e) {
        fixtureLoadState = 'error';
        renderMarquee();
@@ -511,7 +543,7 @@
          <article class="marquee-hot__card">
            <div class="marquee-hot__meta">
              <span>${esc(date)}</span>
-             <span class="marquee-hot__hdp">HDP ${esc(hdp)}</span>
+             <span class="marquee-hot__hdp">HDP <span data-hdp="${f.fixture.id}">${esc(hdp)}</span></span>
            </div>
            <div class="marquee-hot__league">${esc(league)}</div>
            <div class="marquee-hot__teams">
