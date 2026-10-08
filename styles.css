@@ -1657,6 +1657,59 @@ body::after {
   .ai-fab__label { font-size: 0.64rem; padding: 5px 10px; }
 }
 
+#analysisModal [hidden] { display: none; }
+.analysis-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0 14px; }
+.analysis-tab {
+  padding: 9px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--glass);
+  color: var(--silver);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  transition: border-color 0.2s, background 0.2s;
+}
+.analysis-tab i { margin-right: 5px; }
+.analysis-tab.active { border-color: var(--neon-bright); background: linear-gradient(95deg, #4a1080, #6a00cc); color: #fff; box-shadow: var(--glow); }
+
+.ask-log { display: flex; flex-direction: column; gap: 10px; min-height: 160px; max-height: 46vh; overflow-y: auto; padding: 2px; }
+.ask-intro { margin: auto 0; color: #cdb3ea; font-size: 0.78rem; line-height: 1.6; text-align: center; }
+.ask-msg { max-width: 88%; padding: 9px 12px; border-radius: 14px; font-size: 0.8rem; line-height: 1.6; overflow-wrap: anywhere; }
+.ask-msg--user { align-self: flex-end; border-radius: 14px 14px 2px 14px; background: linear-gradient(95deg, #4a1080, #6a00cc); color: #fff; }
+.ask-msg--ai { align-self: flex-start; border: 1px solid var(--border); border-radius: 14px 14px 14px 2px; background: var(--glass); }
+.ask-msg--ai > :last-child { margin-bottom: 0; }
+.ask-msg--ai > :first-child { margin-top: 0; }
+.ask-typing { color: #cdb3ea; animation: pulse 1.2s infinite; }
+.ask-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.ask-form { display: flex; gap: 8px; margin-top: 12px; }
+.ask-input {
+  flex: 1; min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-family: inherit;
+  font-size: 16px; /* below 16px iOS zooms the page on focus */
+  outline: none;
+}
+.ask-input:focus { border-color: var(--neon-bright); box-shadow: var(--glow); }
+.ask-input::placeholder { color: #8e70a6; font-size: 0.8rem; }
+.ask-send {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
+  border: 1px solid var(--border-bright);
+  border-radius: 50%;
+  background: linear-gradient(95deg, #2a0a4d, #6a00cc);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.ask-send:active { transform: scale(0.92); }
+.ask-send:disabled { opacity: 0.5; cursor: wait; }
+
 .analysis-picker { display: grid; gap: 8px; }
 .analysis-pick {
   display: flex; flex-direction: column; gap: 3px;

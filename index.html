@@ -240,17 +240,36 @@
     <div id="analysisModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="analysisTitle">
       <div class="modal-box modal-box--analysis">
         <button class="close-modal" data-close="analysisModal" aria-label="Tutup">✕</button>
-        <h3 id="analysisTitle"><i class="fas fa-robot"></i> Analisis AI</h3>
-        <div class="analysis-match" id="analysisMatch"></div>
-        <div class="analysis-markets" id="analysisMarkets" role="group" aria-label="Fokus market">
-          <button class="analysis-chip active" type="button" data-market="all">Semua</button>
-          <button class="analysis-chip" type="button" data-market="1x2">1X2</button>
-          <button class="analysis-chip" type="button" data-market="ah">Handicap</button>
-          <button class="analysis-chip" type="button" data-market="ou">Over/Under</button>
-          <button class="analysis-chip" type="button" data-market="btts">BTTS</button>
+        <h3 id="analysisTitle"><i class="fas fa-robot"></i> AI Wasit</h3>
+        <div class="analysis-tabs" id="analysisTabs" role="tablist" aria-label="Mode AI">
+          <button class="analysis-tab active" type="button" role="tab" data-mode="match"><i class="fas fa-chart-line"></i> Analisis Pertandingan</button>
+          <button class="analysis-tab" type="button" role="tab" data-mode="ask"><i class="fas fa-book-open"></i> Tanya Peraturan</button>
         </div>
-        <div id="analysisBody" class="analysis-body" aria-live="polite"></div>
-        <p class="analysis-note">Analisis berbasis data dan estimasi model, bukan jaminan hasil.</p>
+        <div id="analysisMatchPanel">
+          <div class="analysis-match" id="analysisMatch"></div>
+          <div class="analysis-markets" id="analysisMarkets" role="group" aria-label="Fokus market">
+            <button class="analysis-chip active" type="button" data-market="all">Semua</button>
+            <button class="analysis-chip" type="button" data-market="1x2">1X2</button>
+            <button class="analysis-chip" type="button" data-market="ah">Handicap</button>
+            <button class="analysis-chip" type="button" data-market="ou">Over/Under</button>
+            <button class="analysis-chip" type="button" data-market="btts">BTTS</button>
+          </div>
+          <div id="analysisBody" class="analysis-body" aria-live="polite"></div>
+          <p class="analysis-note">Analisis berbasis data dan estimasi model, bukan jaminan hasil.</p>
+        </div>
+        <div id="analysisAskPanel" hidden>
+          <div id="askLog" class="ask-log" aria-live="polite"></div>
+          <div class="ask-suggest" id="askSuggest">
+            <button class="analysis-chip" type="button" data-ask="Bagaimana cara bermain sports betting di sini?">Cara bermain</button>
+            <button class="analysis-chip" type="button" data-ask="Apa saja ketentuan umum taruhan?">Ketentuan umum</button>
+            <button class="analysis-chip" type="button" data-ask="Jelaskan aturan Asian Handicap.">Asian Handicap</button>
+            <button class="analysis-chip" type="button" data-ask="Bagaimana aturan Mix Parlay?">Mix Parlay</button>
+          </div>
+          <form class="ask-form" id="askForm">
+            <input id="askInput" class="ask-input" type="text" maxlength="500" autocomplete="off" placeholder="Tanya cara bermain atau peraturan…" aria-label="Pertanyaan tentang peraturan" />
+            <button class="ask-send" id="askSend" type="submit" aria-label="Kirim"><i class="fas fa-paper-plane"></i></button>
+          </form>
+        </div>
       </div>
     </div>
 

@@ -558,6 +558,22 @@
      }
    }
 
+   /* POSTs to the ai-analyst function and feeds the streamed text to onText. */
+   async function streamAi(payload, onText) {
+     const r = await fetch(AI_FN, { method: 'POST', headers: FN_HEADERS, body: JSON.stringify(payload) });
+     if (!r.ok) {
+       const d = await r.json().catch(() => ({}));
+       throw new Error(d.error || `HTTP ${r.status}`);
+     }
+     const reader = r.body.getReader();
+     const decoder = new TextDecoder();
+     for (;;) {
+       const { done, value } = await reader.read();
+       if (done) break;
+       onText(decoder.decode(value, { stream: true }));
+     }
+   }
+
    async function loadAnalysis() {
      const key = `${analysisFixtureId}:${analysisMarket}`;
      let entry = analysisByKey.get(key);
@@ -571,21 +587,8 @@
      analysisEntry = entry;
      renderAnalysis();
      try {
-       const r = await fetch(AI_FN, {
-         method: 'POST',
-         headers: FN_HEADERS,
-         body: JSON.stringify({ fixture: analysisFixtureId, market: analysisMarket }),
-       });
-       if (!r.ok) {
-         const d = await r.json().catch(() => ({}));
-         throw new Error(d.error || `HTTP ${r.status}`);
-       }
-       const reader = r.body.getReader();
-       const decoder = new TextDecoder();
-       for (;;) {
-         const { done, value } = await reader.read();
-         if (done) break;
-         entry.text += decoder.decode(value, { stream: true });
+       await streamAi({ fixture: analysisFixtureId, market: analysisMarket }, (chunk) => {
+         entry.text += chunk;
          // Keeps streaming into the entry even if another match is on screen.
          if (analysisEntry === entry && !analysisFrame) {
            analysisFrame = requestAnimationFrame(() => {
@@ -593,7 +596,7 @@
              renderAnalysis();
            });
          }
-       }
+       });
        if (!entry.text.trim()) throw new Error('Analisis kosong');
      } catch (e) {
        entry.error = e.message || 'Gagal memuat analisis';
@@ -606,12 +609,13 @@
      analysisFixtureId = f.fixture.id;
      $('analysisMatch').textContent =
        `${f.teams.home.name} vs ${f.teams.away.name} • ${f.league.name} • ${timeFmt(f.fixture.date)} WIB`;
+     setAnalysisMode('match');
      $('analysisModal').classList.add('show');
      loadAnalysis();
    }
 
-   /* Opened from the floating button: no match chosen yet, so list the top ones. */
-   function openAnalysisPicker() {
+   /* No match chosen yet, so list the top ones. */
+   function showAnalysisPicker() {
      analysisFixtureId = null;
      analysisEntry = null;
      $('analysisMatch').textContent = 'Pilih pertandingan untuk dianalisis';
@@ -624,7 +628,65 @@
              <small>${esc(f.league.name)} • ${pickDate.format(new Date(f.fixture.date))} • ${timeFmt(f.fixture.date)} WIB</small>
            </button>`).join('')}</div>`
        : '<div class="empty-state"><b>Belum ada pertandingan</b><span>Jadwal masih dimuat atau tidak ada fixture mendatang.</span></div>';
-     $('analysisModal').classList.add('show');
+   }
+
+   function setAnalysisMode(mode) {
+     const ask = mode === 'ask';
+     document.querySelectorAll('.analysis-tab').forEach((t) => {
+       const on = t.dataset.mode === mode;
+       t.classList.toggle('active', on);
+       t.setAttribute('aria-selected', String(on));
+     });
+     $('analysisMatchPanel').hidden = ask;
+     $('analysisAskPanel').hidden = !ask;
+     if (ask) renderAsk();
+     else if (analysisFixtureId == null) showAnalysisPicker();
+   }
+
+   /* ---------- rules Q&A (answers come from supabase/functions/ai-analyst/rules) ---------- */
+   const askMessages = [];
+   let askBusy = false;
+   let askFrame = 0;
+
+   function renderAsk() {
+     const log = $('askLog');
+     log.innerHTML = askMessages.length
+       ? askMessages.map((m) => m.role === 'user'
+           ? `<div class="ask-msg ask-msg--user">${esc(m.content)}</div>`
+           : `<div class="ask-msg ask-msg--ai analysis-body">${m.content ? mdToHtml(m.content) : '<span class="ask-typing">AI Wasit sedang menjawab…</span>'}</div>`
+         ).join('')
+       : '<div class="ask-intro">Tanyakan cara bermain, istilah, atau peraturan sports betting. AI Wasit menjawab berdasarkan peraturan yang berlaku di situs ini.</div>';
+     log.scrollTop = log.scrollHeight;
+     $('askSuggest').hidden = askMessages.length > 0;
+     $('askSend').disabled = askBusy;
+   }
+
+   async function sendAsk(text) {
+     const question = text.trim();
+     if (!question || askBusy) return;
+     const history = askMessages.filter((m) => !m.failed).slice(-8).map(({ role, content }) => ({ role, content }));
+     const reply = { role: 'assistant', content: '' };
+     askMessages.push({ role: 'user', content: question }, reply);
+     askBusy = true;
+     $('askInput').value = '';
+     renderAsk();
+     try {
+       await streamAi({ mode: 'ask', question, history }, (chunk) => {
+         reply.content += chunk;
+         if (!askFrame) {
+           askFrame = requestAnimationFrame(() => {
+             askFrame = 0;
+             renderAsk();
+           });
+         }
+       });
+       if (!reply.content.trim()) throw new Error('Jawaban kosong');
+     } catch (e) {
+       reply.content = `> ⚠️ ${e.message || 'Gagal memuat jawaban'}`;
+       reply.failed = true;
+     }
+     askBusy = false;
+     renderAsk();
    }
 
    function analysis() {
@@ -634,7 +696,22 @@
        const f = selectedFixtures.find((x) => String(x.fixture.id) === btn.dataset.analyze);
        if (f) openAnalysis(f);
      });
-     $('aiFab').addEventListener('click', openAnalysisPicker);
+     $('aiFab').addEventListener('click', () => {
+       setAnalysisMode('ask');
+       $('analysisModal').classList.add('show');
+     });
+     $('analysisTabs').addEventListener('click', (e) => {
+       const tab = e.target.closest('[data-mode]');
+       if (tab) setAnalysisMode(tab.dataset.mode);
+     });
+     $('askForm').addEventListener('submit', (e) => {
+       e.preventDefault();
+       sendAsk($('askInput').value);
+     });
+     $('askSuggest').addEventListener('click', (e) => {
+       const chip = e.target.closest('[data-ask]');
+       if (chip) sendAsk(chip.dataset.ask);
+     });
      $('analysisMarkets').addEventListener('click', (e) => {
        const chip = e.target.closest('[data-market]');
        if (!chip) return;
