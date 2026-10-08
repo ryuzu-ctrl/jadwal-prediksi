@@ -219,12 +219,38 @@
       <a href="https://shortq.org/chat-kapal" class="mobnav__item" data-mob="layanan"><i class="fas fa-headset"></i><span>Layanan</span></a>
     </nav>
 
+    <!-- Floating AI assistant -->
+    <button class="ai-fab" id="aiFab" type="button" aria-label="Buka Analisis AI">
+      <span class="ai-fab__label">Tanya AI Wasit</span>
+      <span class="ai-fab__glow" aria-hidden="true"></span>
+      <img class="ai-fab__img" src="ai-wasit.png" alt="" width="140" height="140" />
+      <span class="ai-fab__shadow" aria-hidden="true"></span>
+    </button>
+
     <!-- Services modal -->
     <div id="servicesModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-box">
         <button class="close-modal" data-close="servicesModal" aria-label="Tutup">✕</button>
         <h3 id="modalTitle"><i class="fas fa-star-of-life"></i> Layanan Premium</h3>
         <div id="modalMenu" class="modal-menu"></div>
+      </div>
+    </div>
+
+    <!-- AI analysis modal -->
+    <div id="analysisModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="analysisTitle">
+      <div class="modal-box modal-box--analysis">
+        <button class="close-modal" data-close="analysisModal" aria-label="Tutup">✕</button>
+        <h3 id="analysisTitle"><i class="fas fa-robot"></i> Analisis AI</h3>
+        <div class="analysis-match" id="analysisMatch"></div>
+        <div class="analysis-markets" id="analysisMarkets" role="group" aria-label="Fokus market">
+          <button class="analysis-chip active" type="button" data-market="all">Semua</button>
+          <button class="analysis-chip" type="button" data-market="1x2">1X2</button>
+          <button class="analysis-chip" type="button" data-market="ah">Handicap</button>
+          <button class="analysis-chip" type="button" data-market="ou">Over/Under</button>
+          <button class="analysis-chip" type="button" data-market="btts">BTTS</button>
+        </div>
+        <div id="analysisBody" class="analysis-body" aria-live="polite"></div>
+        <p class="analysis-note">Analisis berbasis data dan estimasi model, bukan jaminan hasil.</p>
       </div>
     </div>
 

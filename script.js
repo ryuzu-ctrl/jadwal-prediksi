@@ -472,6 +472,7 @@
                    </div>
                    <span class="prediction-score" data-pred="${f.fixture.id}">${esc(score)}</span>
                  </div>
+                 <button class="analysis-btn" type="button" data-analyze="${f.fixture.id}"><i class="fas fa-robot"></i> Analisis AI</button>
                </article>`;
              }).join('')}
            </div>
@@ -479,6 +480,170 @@
       .join('');
    }
    
+   /* ---------- AI analysis (streamed from the ai-analyst edge function) ---------- */
+   const AI_FN = `${SUPABASE_URL}/functions/v1/ai-analyst`;
+   const analysisByKey = new Map();
+   let analysisFixtureId = null;
+   let analysisMarket = 'all';
+   let analysisEntry = null;
+   let analysisFrame = 0;
+
+   function mdInline(text) {
+     return esc(text)
+       .replace(/`([^`]+)`/g, '<code>$1</code>')
+       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+       .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
+   }
+
+   /* Covers only what the analyst prompt produces: headings, lists, quotes,
+      rules and fenced blocks. Input is escaped before any tag is added. */
+   function mdToHtml(src) {
+     const out = [];
+     let block = null;
+     let code = null;
+     const flush = () => {
+       if (!block) return;
+       const items = block.items.map(mdInline);
+       if (block.type === 'p') out.push(`<p>${items.join('<br>')}</p>`);
+       else if (block.type === 'quote') out.push(`<blockquote>${items.join('<br>')}</blockquote>`);
+       else out.push(`<${block.type}>${items.map((i) => `<li>${i}</li>`).join('')}</${block.type}>`);
+       block = null;
+     };
+     const add = (type, item) => {
+       if (!block || block.type !== type) {
+         flush();
+         block = { type, items: [] };
+       }
+       block.items.push(item);
+     };
+     for (const line of src.split('\n')) {
+       let m;
+       if (code) {
+         if (/^\s*(```|~~~)/.test(line)) {
+           out.push(`<pre>${esc(code.join('\n'))}</pre>`);
+           code = null;
+         } else code.push(line);
+       } else if (/^\s*(```|~~~)/.test(line)) {
+         flush();
+         code = [];
+       } else if (!line.trim()) flush();
+       else if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+         flush();
+         const tag = m[1].length <= 2 ? 'h4' : 'h5';
+         out.push(`<${tag}>${mdInline(m[2])}</${tag}>`);
+       } else if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+         flush();
+         out.push('<hr>');
+       } else if ((m = line.match(/^\s*>\s?(.*)$/))) add('quote', m[1]);
+       else if ((m = line.match(/^\s*[-*•]\s+(.*)$/))) add('ul', m[1]);
+       else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) add('ol', m[1]);
+       else add('p', line.trim());
+     }
+     if (code) out.push(`<pre>${esc(code.join('\n'))}</pre>`);
+     flush();
+     return out.join('');
+   }
+
+   function renderAnalysis() {
+     const body = $('analysisBody');
+     const entry = analysisEntry;
+     if (!entry) return;
+     if (entry.error) {
+       body.innerHTML = `<div class="error-state"><b>Analisis gagal</b><span>${esc(entry.error)}</span><button type="button" id="analysisRetry">Coba lagi</button></div>`;
+       $('analysisRetry').onclick = loadAnalysis;
+     } else if (!entry.text) {
+       body.innerHTML = '<div class="loading-state"><div class="loader"></div><b>Menganalisis data pertandingan…</b><span>Biasanya butuh kurang dari satu menit</span></div>';
+     } else {
+       body.innerHTML = mdToHtml(entry.text);
+     }
+   }
+
+   async function loadAnalysis() {
+     const key = `${analysisFixtureId}:${analysisMarket}`;
+     let entry = analysisByKey.get(key);
+     if (entry) {
+       analysisEntry = entry;
+       renderAnalysis();
+       return;
+     }
+     entry = { text: '', error: '' };
+     analysisByKey.set(key, entry);
+     analysisEntry = entry;
+     renderAnalysis();
+     try {
+       const r = await fetch(AI_FN, {
+         method: 'POST',
+         headers: FN_HEADERS,
+         body: JSON.stringify({ fixture: analysisFixtureId, market: analysisMarket }),
+       });
+       if (!r.ok) {
+         const d = await r.json().catch(() => ({}));
+         throw new Error(d.error || `HTTP ${r.status}`);
+       }
+       const reader = r.body.getReader();
+       const decoder = new TextDecoder();
+       for (;;) {
+         const { done, value } = await reader.read();
+         if (done) break;
+         entry.text += decoder.decode(value, { stream: true });
+         // Keeps streaming into the entry even if another match is on screen.
+         if (analysisEntry === entry && !analysisFrame) {
+           analysisFrame = requestAnimationFrame(() => {
+             analysisFrame = 0;
+             renderAnalysis();
+           });
+         }
+       }
+       if (!entry.text.trim()) throw new Error('Analisis kosong');
+     } catch (e) {
+       entry.error = e.message || 'Gagal memuat analisis';
+       analysisByKey.delete(key);
+     }
+     if (analysisEntry === entry) renderAnalysis();
+   }
+
+   function openAnalysis(f) {
+     analysisFixtureId = f.fixture.id;
+     $('analysisMatch').textContent =
+       `${f.teams.home.name} vs ${f.teams.away.name} • ${f.league.name} • ${timeFmt(f.fixture.date)} WIB`;
+     $('analysisModal').classList.add('show');
+     loadAnalysis();
+   }
+
+   /* Opened from the floating button: no match chosen yet, so list the top ones. */
+   function openAnalysisPicker() {
+     analysisFixtureId = null;
+     analysisEntry = null;
+     $('analysisMatch').textContent = 'Pilih pertandingan untuk dianalisis';
+     const matches = selectedFixtures.slice(0, 8);
+     const pickDate = new Intl.DateTimeFormat('id-ID', { timeZone: TZ, day: '2-digit', month: 'short' });
+     $('analysisBody').innerHTML = matches.length
+       ? `<div class="analysis-picker">${matches.map((f) =>
+           `<button class="analysis-pick" type="button" data-analyze="${f.fixture.id}">
+             <span>${esc(f.teams.home.name)} vs ${esc(f.teams.away.name)}</span>
+             <small>${esc(f.league.name)} • ${pickDate.format(new Date(f.fixture.date))} • ${timeFmt(f.fixture.date)} WIB</small>
+           </button>`).join('')}</div>`
+       : '<div class="empty-state"><b>Belum ada pertandingan</b><span>Jadwal masih dimuat atau tidak ada fixture mendatang.</span></div>';
+     $('analysisModal').classList.add('show');
+   }
+
+   function analysis() {
+     document.addEventListener('click', (e) => {
+       const btn = e.target.closest('[data-analyze]');
+       if (!btn) return;
+       const f = selectedFixtures.find((x) => String(x.fixture.id) === btn.dataset.analyze);
+       if (f) openAnalysis(f);
+     });
+     $('aiFab').addEventListener('click', openAnalysisPicker);
+     $('analysisMarkets').addEventListener('click', (e) => {
+       const chip = e.target.closest('[data-market]');
+       if (!chip) return;
+       analysisMarket = chip.dataset.market;
+       document.querySelectorAll('.analysis-chip').forEach((c) => c.classList.toggle('active', c === chip));
+       if (analysisFixtureId != null) loadAnalysis();
+     });
+   }
+
    /* ---------- refresh ---------- */
    async function refresh() {
      clearTimeout(timer);
@@ -1061,6 +1226,7 @@
      dateNav();
      searchMatch();
      modal();
+     analysis();
      ripple();
      scrollReveal();
      scrollFX();

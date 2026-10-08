@@ -1070,6 +1070,23 @@ body::after {
   font-weight: 800;
   white-space: nowrap;
 }
+.analysis-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  background: linear-gradient(95deg, #2a0a4d, #6a00cc);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  transition: transform 0.2s, box-shadow 0.25s;
+}
+.analysis-btn i { margin-right: 6px; }
+.analysis-btn:hover { box-shadow: var(--glow); }
+.analysis-btn:active { transform: scale(0.97); }
 .prediction-score--unavailable {
   border-color: rgba(205, 179, 234, 0.35);
   background: rgba(95, 71, 111, 0.35);
@@ -1433,6 +1450,51 @@ body::after {
 .close-modal:hover { color: #fff; transform: rotate(90deg) scale(1.2); }
 .close-modal:active { transform: rotate(90deg) scale(0.9); }
 .modal-menu { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.modal-box--analysis { max-width: 720px; width: 94%; padding: 20px 18px; }
+.analysis-match { color: #cdb3ea; font-size: 0.74rem; font-weight: 600; line-height: 1.5; }
+.analysis-markets { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+.analysis-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--glass);
+  color: var(--silver);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  transition: border-color 0.2s, background 0.2s;
+}
+.analysis-chip.active { border-color: var(--neon-bright); background: linear-gradient(95deg, #4a1080, #6a00cc); color: #fff; }
+.analysis-body { color: var(--silver); font-size: 0.82rem; line-height: 1.65; overflow-wrap: anywhere; }
+.analysis-body h4 {
+  margin: 18px 0 8px;
+  color: var(--neon-pink);
+  font-family: var(--font-head);
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.analysis-body h5 { margin: 14px 0 6px; color: #fff; font-size: 0.84rem; }
+.analysis-body p, .analysis-body ul, .analysis-body ol, .analysis-body blockquote, .analysis-body pre { margin: 0 0 10px; }
+.analysis-body ul, .analysis-body ol { padding-left: 20px; }
+.analysis-body li { margin-bottom: 4px; }
+.analysis-body strong { color: #fff; }
+.analysis-body hr { margin: 14px 0; border: 0; border-top: 1px solid var(--border); }
+.analysis-body blockquote { padding: 8px 12px; border-left: 3px solid var(--neon); border-radius: 0 8px 8px 0; background: rgba(176, 38, 255, 0.1); }
+.analysis-body pre {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e9defa;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+.analysis-body code { padding: 1px 5px; border-radius: 5px; background: rgba(176, 38, 255, 0.18); font-size: 0.92em; }
+.analysis-note { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); color: #8e70a6; font-size: 0.64rem; }
 .modal-menu a {
   background: #1a063a;
   padding: 12px 16px;
@@ -1504,6 +1566,114 @@ body::after {
 @keyframes rippleAnim {
   to { transform: scale(1); opacity: 0; }
 }
+
+/* ---------- Floating AI assistant ----------
+   Three layers: a pulsing halo behind the mascot, the mascot itself with a
+   rim light + cast shadow that follow its outline, and a ground shadow that
+   shrinks as the mascot floats up. */
+.ai-fab {
+  --ai-size: 140px; /* change this one value to resize the mascot */
+  position: fixed;
+  right: 10px;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  z-index: 950;
+  width: var(--ai-size);
+  height: calc(var(--ai-size) * 1.1);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ai-fab__img {
+  position: relative;
+  display: block;
+  width: var(--ai-size); height: var(--ai-size);
+  object-fit: contain;
+  filter:
+    drop-shadow(0 0 8px rgba(214, 51, 255, 0.85))
+    drop-shadow(0 0 22px rgba(120, 170, 255, 0.45))
+    drop-shadow(0 14px 11px rgba(0, 0, 0, 0.6));
+  animation: aiFabFloat 3.6s ease-in-out infinite;
+  transition: transform 0.25s var(--ease), filter 0.25s ease;
+}
+.ai-fab__glow {
+  position: absolute;
+  left: 50%; top: calc(var(--ai-size) * 0.48);
+  width: calc(var(--ai-size) * 1.1); height: calc(var(--ai-size) * 1.1);
+  margin: calc(var(--ai-size) * -0.55) 0 0 calc(var(--ai-size) * -0.55);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.5) 0%, rgba(214, 51, 255, 0.5) 28%, rgba(176, 38, 255, 0.18) 55%, transparent 72%);
+  animation: aiFabGlow 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.ai-fab__shadow {
+  position: absolute;
+  left: 50%; bottom: 0;
+  width: calc(var(--ai-size) * 0.58); height: calc(var(--ai-size) * 0.12);
+  margin-left: calc(var(--ai-size) * -0.29);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 72%);
+  animation: aiFabShadow 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.ai-fab__label {
+  position: absolute;
+  right: calc(var(--ai-size) * 0.86); top: calc(var(--ai-size) * 0.08);
+  padding: 7px 13px;
+  border: 1px solid var(--border-bright);
+  border-radius: 14px 14px 2px 14px;
+  background: linear-gradient(95deg, #2a0a4d, #6a00cc);
+  box-shadow: var(--glow), 0 6px 14px rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  animation: aiFabFloat 3.6s ease-in-out infinite;
+}
+.ai-fab:hover .ai-fab__img,
+.ai-fab:focus-visible .ai-fab__img {
+  filter:
+    drop-shadow(0 0 12px rgba(255, 92, 240, 1))
+    drop-shadow(0 0 32px rgba(120, 170, 255, 0.7))
+    drop-shadow(0 16px 12px rgba(0, 0, 0, 0.6));
+}
+.ai-fab:focus-visible { outline: 2px solid var(--neon-bright); outline-offset: 4px; border-radius: 16px; }
+.ai-fab:active .ai-fab__img { transform: scale(0.92); animation-play-state: paused; }
+@keyframes aiFabFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes aiFabGlow {
+  0%, 100% { opacity: 0.55; transform: scale(0.9); }
+  50% { opacity: 1; transform: translateY(-10px) scale(1.08); }
+}
+@keyframes aiFabShadow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.72); }
+}
+@media (max-width: 500px) {
+  .ai-fab { --ai-size: 110px; right: 2px; }
+  .ai-fab__label { font-size: 0.64rem; padding: 5px 10px; }
+}
+
+.analysis-picker { display: grid; gap: 8px; }
+.analysis-pick {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--glass);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: left;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.analysis-pick small { color: #cdb3ea; font-size: 0.64rem; font-weight: 600; }
+.analysis-pick:hover { border-color: var(--neon-bright); transform: translateX(3px); }
 
 /* ---------- Magnetic (desktop) ---------- */
 .magnetic { transition: transform 0.2s ease; }
